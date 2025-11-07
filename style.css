@@ -107,3 +107,20 @@ h1 .turbo{
 }
 .questions .icon:disabled{opacity:.55;cursor:not-allowed}
 .questions .icon:hover{filter:brightness(.95)}
+/* --- Scroll + vertical feedback fixes (A+ minimal patch) --- */
+html, body { height: auto; min-height: 100%; overflow-y: auto; }
+
+#game { padding-bottom: 40px; }               /* leave room for bottom content */
+#questions { display: block; }                /* ensure block flow (not flex-row) */
+#results { display: block; }                  /* stack summary + list vertically */
+#results ul { list-style: none; padding: 0; margin: 10px auto 0; max-width: 560px; display: block; }
+#results li { display: block; margin: 6px 0; }
+
+/* If your layout centers the whole card vertically (common A+ style),
+   let it grow taller than the viewport and still scroll. */
+.wrap, .card, .container { max-height: none; overflow: visible; }
+
+/* iOS/Safari guard: avoid 100vh traps */
+@supports (-webkit-touch-callout: none) {
+  .wrap, .card, .container { min-height: auto; }
+}
