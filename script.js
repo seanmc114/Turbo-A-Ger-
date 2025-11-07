@@ -1,25 +1,36 @@
-// Turbo: A+ Edition — German (fits your original A+ HTML/CSS exactly)
-// - Directions: EN→DE and DE→EN (two level buttons in #level-list)
-// - Tenses: Present, Past (Präteritum), Future (werden + INF)
-// - Pronouns required in German
-// - Marking: case-insensitive; ä/ö/ü/ß ≡ ae/oe/ue/ss; spaces collapsed
-// - For questions, a final "?" is required (no leading symbol needed)
-// - Per-question 🔊 (TTS) and 🎤 (speech recognition)
-
+// Turbo: A+ Edition — German (EN↔DE) with 10 Levels + Mic/Read + vertical feedback
+// Fits your existing A+ index.html & style.css (no changes needed)
 (()=>{
-  const $ = s => document.querySelector(s);
+  const $  = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
 
-  // ---- CONFIG ----
+  // -------------------- CONFIG --------------------
   const QUESTIONS_PER_RUN = 10;
-  const PENALTY_SECONDS = 30;
-  const DIRS = { EN2DE:"EN→DE", DE2EN:"DE→EN" };
+  const PENALTY_SECONDS   = 30;
 
-  let direction = "EN2DE";
+  // Two directions
+  const DIRS = { EN2DE: "EN→DE", DE2EN: "DE→EN" };
+  let direction   = "EN2DE";
   let currentTense = "Present";
+  let currentLevel = "L1";
+
   let startTime = 0, timerId = null, quiz = [];
 
-  // Persons (7 slots to match your usual pattern)
+  // 10 LEVELS: each maps to a subset (or mix) of verbs
+  const LEVELS = {
+    L1:  ["sein","haben","gehen"],
+    L2:  ["kommen","machen"],
+    L3:  ["spielen","lernen"],
+    L4:  ["wohnen","sprechen"],
+    L5:  ["essen","trinken"],
+    L6:  ["sein","haben","gehen","kommen"],
+    L7:  ["machen","spielen","lernen","wohnen"],
+    L8:  ["sprechen","essen","trinken"],
+    L9:  ["sein","haben","gehen","sprechen","kommen"],
+    L10: ["sein","haben","gehen","kommen","machen","spielen","lernen","wohnen","sprechen","essen","trinken"] // mega mix
+  };
+
+  // Persons (7 like your other games)
   const PERSONS = [
     { en:"I",        de:"ich" },
     { en:"you",      de:"du"  },     // (sg)
@@ -30,8 +41,8 @@
     { en:"they",     de:"sie" }
   ];
 
-  // Verb DB: present + präteritum; future = werden + INF
-  // Each array: [ich, du, er, sie, wir, ihr, sie(pl)]
+  // Verb database (present + präteritum; future = werden + INF)
+  // Arrays: [ich, du, er, sie, wir, ihr, sie(pl)]
   const DB = {
     sein:    { inf:"sein",    present:["bin","bist","ist","ist","sind","seid","sind"],    past:["war","warst","war","war","waren","wart","waren"] },
     haben:   { inf:"haben",   present:["habe","hast","hat","hat","haben","habt","haben"], past:["hatte","hattest","hatte","hatte","hatten","hattet","hatten"] },
@@ -45,9 +56,8 @@
     essen:   { inf:"essen",   present:["esse","isst","isst","isst","essen","esst","essen"], past:["aß","aßest","aß","aß","aßen","aßt","aßen"] },
     trinken: { inf:"trinken", present:["trinke","trinkst","trinkt","trinkt","trinken","trinkt","trinken"], past:["trank","trankst","trank","trank","tranken","trankt","tranken"] }
   };
-  const VERB_KEYS = Object.keys(DB);
 
-  // ---- Voice (TTS) ----
+  // -------------------- VOICE (TTS) --------------------
   const VOICE = {
     on: 'speechSynthesis' in window,
     en: null, de: null,
@@ -60,78 +70,97 @@
       };
       pick(); window.speechSynthesis.onvoiceschanged = pick;
     },
-    speak(text, which='en'){
+    speak(text, lang='en'){
       if(!this.on || !text) return;
       const u = new SpeechSynthesisUtterance(text);
-      const voice = which==='de' ? (this.de||this.en) : (this.en||this.de);
+      const voice = lang==='de' ? (this.de||this.en) : (this.en||this.de);
       if(voice) u.voice = voice;
-      u.lang = voice?.lang || (which==='de' ? 'de-DE' : 'en-GB');
+      u.lang = voice?.lang || (lang==='de' ? 'de-DE' : 'en-GB');
       try { speechSynthesis.cancel(); } catch(e){}
       speechSynthesis.speak(u);
     }
   };
   VOICE.init();
 
-  // ---- Mic (ASR) ----
+  // -------------------- MIC (ASR) --------------------
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
   const srOK = !!SR;
 
-  // ---- Hook up your existing tense buttons / level list / game shell ----
-  // (Keep your current index.html + style.css unchanged)  :contentReference[oaicite:2]{index=2} :contentReference[oaicite:3]{index=3}
-
+  // -------------------- HOOK UI --------------------
   // Tense buttons
   $$("#tense-buttons .tense-button").forEach(btn=>{
     btn.onclick = ()=>{
       $$("#tense-buttons .tense-button").forEach(b=>b.classList.remove("active"));
       btn.classList.add("active");
       currentTense = btn.dataset.tense || "Present";
-      renderLevelList(); // updates the best-time line for that tense
+      renderLevelList();
     };
   });
 
-  // Level list: just two starts (EN→DE, DE→EN) to match A+ simplicity
+  // Level + direction UI
   function renderLevelList(){
-    const box = $("#level-list");
-    box.innerHTML = "";
+    const host = $("#level-list");
+    host.innerHTML = "";
 
-    const b1 = document.createElement("button");
-    b1.className = "level-btn";
-    b1.textContent = `Start ${DIRS.EN2DE}`;
-    b1.onclick = ()=>{ direction="EN2DE"; startRun(); };
+    // Direction toggle row (tiny)
+    const dirRow = document.createElement("div");
+    dirRow.style.display = "flex";
+    dirRow.style.gap = "8px";
+    dirRow.style.justifyContent = "center";
+    const d1 = document.createElement("button");
+    d1.className = "level-btn";
+    d1.textContent = DIRS.EN2DE;
+    d1.onclick = ()=>{ direction="EN2DE"; renderLevelList(); };
+    const d2 = document.createElement("button");
+    d2.className = "level-btn";
+    d2.textContent = DIRS.DE2EN;
+    d2.onclick = ()=>{ direction="DE2EN"; renderLevelList(); };
+    dirRow.appendChild(d1); dirRow.appendChild(d2);
+    host.appendChild(dirRow);
 
-    const b2 = document.createElement("button");
-    b2.className = "level-btn";
-    b2.textContent = `Start ${DIRS.DE2EN}`;
-    b2.onclick = ()=>{ direction="DE2EN"; startRun(); };
+    // 10 level buttons
+    const grid = document.createElement("div");
+    grid.style.display = "grid";
+    grid.style.gridTemplateColumns = "repeat(auto-fit, minmax(180px, 1fr))";
+    grid.style.gap = "10px";
+    grid.style.marginTop = "10px";
 
-    box.appendChild(b1);
-    box.appendChild(b2);
-
-    // Best times line (per tense+direction)
-    const best = document.createElement("div");
-    best.style.color = "#666";
-    best.style.fontSize = "0.95rem";
-    best.textContent = `Best — ${DIRS.EN2DE}: ${fmtBest(getBest(currentTense,"EN2DE"))} | ${DIRS.DE2EN}: ${fmtBest(getBest(currentTense,"DE2EN"))}`;
-    box.appendChild(best);
+    Object.keys(LEVELS).forEach((lvl)=>{
+      const btn = document.createElement("button");
+      btn.className = "level-btn";
+      const best = getBest(currentTense, direction, lvl);
+      btn.textContent = `${lvl} — Best: ${fmtBest(best)}`;
+      btn.onclick = ()=>{ currentLevel = lvl; startRun(); };
+      grid.appendChild(btn);
+    });
+    host.appendChild(grid);
   }
   renderLevelList();
 
-  // ---- Run build ----
+  // -------------------- QUIZ BUILD --------------------
   function startRun(){
     $("#results").innerHTML = "";
     $("#questions").innerHTML = "";
     $("#game").style.display = "block";
     $("#back-button").style.display = "none";
-    quiz = makeQuiz();
+
+    quiz = makeQuizFor(currentLevel);
     renderQuestions(quiz);
     attachSubmit();
+
+    // ensure Q1 visible + focus; also force page top (fixes "can't see #1")
+    try { window.scrollTo({ top: 0, behavior: "instant" }); } catch(e){ window.scrollTo(0,0); }
+    const firstInput = $("#questions input");
+    if (firstInput){ firstInput.focus(); firstInput.scrollIntoView({block:"start"}); }
+
     startTimer();
   }
 
-  function makeQuiz(){
+  function makeQuizFor(levelKey){
     const pool = [];
-    const kinds = ["pos","neg","q"]; // positive / negative / question
-    VERB_KEYS.forEach(vk=>{
+    const verbs = LEVELS[levelKey] || LEVELS.L1;
+    const kinds = ["pos","neg","q"];
+    verbs.forEach(vk=>{
       for (let pi=0; pi<PERSONS.length; pi++){
         kinds.forEach(k=> pool.push(buildItem(vk, pi, k)));
       }
@@ -144,7 +173,7 @@
     const V = DB[vk], P = PERSONS[pi];
     const enS = normalizeSubject(P.en), deS = P.de;
 
-    // GERMAN
+    // ----- German targets -----
     let dePos, deNeg, deQ;
     if (currentTense==="Present"){
       const f=V.present[pi]; dePos=`${deS} ${f}`; deNeg=`${deS} ${f} nicht`; deQ=`${cap(f)} ${deS}?`;
@@ -155,7 +184,7 @@
       dePos=`${deS} ${W} ${V.inf}`; deNeg=`${deS} ${W} nicht ${V.inf}`; deQ=`${cap(W)} ${deS} ${V.inf}?`;
     }
 
-    // ENGLISH
+    // ----- English targets -----
     const base = enBase(vk), past=enPast(vk), third=is3(enS);
     let enPos,enNeg,enQ;
     if (currentTense==="Present"){
@@ -172,7 +201,7 @@
       enQ   = `Will ${enS} ${base}?`;
     }
 
-    // Direction decides prompt & answer + read language
+    // Direction decides prompt / answer + TTS language
     let prompt, answer, readLang = (direction==="EN2DE") ? "en" : "de";
     if (direction==="EN2DE"){
       if(kind==="pos"){prompt=enPos; answer=dePos;}
@@ -186,23 +215,29 @@
     return {prompt, answer, kind, readLang};
   }
 
+  // -------------------- RENDER --------------------
   function renderQuestions(items){
     const host = $("#questions");
     items.forEach((q,i)=>{
       const row = document.createElement("div");
+
+      // prompt line + tiny buttons (🔊/🎤)
       const prompt = document.createElement("div");
+      prompt.style.display = "flex";
+      prompt.style.alignItems = "center";
+      prompt.style.justifyContent = "center";
+      prompt.style.gap = "6px";
       prompt.textContent = `${i+1}. ${q.prompt}`;
 
-      // inline 🔊 + 🎤 (keeps your A+ layout compact)
       const readBtn = document.createElement("button");
       readBtn.textContent = "🔊";
-      readBtn.style.marginLeft = "6px";
+      readBtn.className = "icon";
       readBtn.title = "Read this";
       readBtn.onclick = ()=> VOICE.speak(q.prompt, q.readLang);
 
       const micBtn = document.createElement("button");
       micBtn.textContent = "🎤";
-      micBtn.style.marginLeft = "6px";
+      micBtn.className = "icon";
       micBtn.title = srOK ? "Dictate your answer" : "Speech recognition not supported";
 
       const input = document.createElement("input");
@@ -213,18 +248,20 @@
 
       if (srOK){
         micBtn.onclick = ()=>{
-          const rec = new SR(); rec.lang = (direction==="EN2DE") ? "de-DE" : "en-GB";
+          const rec = new (window.SpeechRecognition||window.webkitSpeechRecognition)();
+          rec.lang = (direction==="EN2DE") ? "de-DE" : "en-GB";
           rec.interimResults = false; rec.maxAlternatives = 1;
           micBtn.disabled = true; micBtn.textContent = "⏺️…";
           rec.onresult = e => { input.value = e.results[0][0].transcript || ""; };
           rec.onerror = ()=>{};
           rec.onend = ()=>{ micBtn.disabled=false; micBtn.textContent="🎤"; };
-          try{ rec.start(); } catch(e){ micBtn.disabled=false; micBtn.textContent="🎤"; }
+          try{ rec.start(); }catch(e){ micBtn.disabled=false; micBtn.textContent="🎤"; }
         };
       } else micBtn.disabled = true;
 
       prompt.appendChild(readBtn);
       prompt.appendChild(micBtn);
+
       row.appendChild(prompt);
       row.appendChild(input);
       host.appendChild(row);
@@ -236,7 +273,11 @@
       stopTimer();
       const inputs = $$("#questions input");
       let correct = 0;
-      const res = $("#results"); res.innerHTML = "";
+
+      // Vertical feedback list (like original): UL > LI
+      const results = $("#results");
+      results.innerHTML = "";
+      const ul = document.createElement("ul");
 
       inputs.forEach((inp,i)=>{
         const ok = isCorrect(inp.value, quiz[i].answer);
@@ -244,10 +285,10 @@
         inp.classList.remove("good","bad");
         inp.classList.add(ok ? "good" : "bad");
 
-        const line = document.createElement("div");
-        line.className = "row " + (ok ? "ok" : "no");
-        line.textContent = `${i+1}. ${quiz[i].prompt}  →  ${quiz[i].answer}`;
-        res.appendChild(line);
+        const li = document.createElement("li");
+        li.className = ok ? "correct" : "incorrect";
+        li.textContent = `${i+1}. ${quiz[i].prompt} → ${quiz[i].answer}`;
+        ul.appendChild(li);
       });
 
       const elapsed = (performance.now()-startTime)/1000;
@@ -259,11 +300,14 @@
       summary.innerHTML = `<strong>🏁 Final Time: ${finalTime.toFixed(1)}s</strong>
                            <div class="line">✅ Correct: ${correct}/${quiz.length}</div>
                            ${penalty>0 ? `<div class="line">⏱️ Penalty: +${penalty}s (${PENALTY_SECONDS}s each)</div>` : ""}`;
-      res.prepend(summary);
 
-      // best per tense+direction
-      const prev = getBest(currentTense, direction);
-      if (prev==null || finalTime < prev) saveBest(currentTense, direction, finalTime);
+      // Clear and append vertical summary + list
+      results.appendChild(summary);
+      results.appendChild(ul);
+
+      // best per tense+direction+level
+      const prev = getBest(currentTense, direction, currentLevel);
+      if (prev==null || finalTime < prev) saveBest(currentTense, direction, currentLevel, finalTime);
 
       $("#back-button").style.display = "inline-block";
       $("#back-button").onclick = ()=>{
@@ -273,7 +317,7 @@
     };
   }
 
-  // ---- Timer ----
+  // -------------------- TIMER --------------------
   function startTimer(){
     startTime = performance.now();
     $("#timer").textContent = "Time: 0.0s";
@@ -285,11 +329,9 @@
   }
   function stopTimer(){ clearInterval(timerId); }
 
-  // ---- Helpers ----
+  // -------------------- HELPERS --------------------
   function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } }
-  function cap(s){ return s? s[0].toUpperCase()+s.slice(1):s; }
-  function capWord(s){ return s? s[0].toUpperCase()+s.slice(1):s; }
-  function capFirst(s){ return s? s[0].toUpperCase()+s.slice(1):s; }
+  function cap(s){ return s ? s[0].toUpperCase()+s.slice(1) : s; }
   function normalizeSubject(s){ return s==="you (pl)" ? "you" : s; }
   function is3(s){ return s==="he"||s==="she"||s==="it"; }
   function thirdForm(base){ if(base==="have")return"has"; if(base==="go")return"goes"; if(base.endsWith("y"))return base.slice(0,-1)+"ies"; return base+"s"; }
@@ -322,17 +364,15 @@
       case "sprechen": return "spoke";
       case "essen": return "ate";
       case "trinken": return "drank";
-      default: return enBase(vk) + "ed";
+      default: return enBase(vk)+"ed";
     }
   }
 
-  // Normalizer (German-friendly): lower; spaces; ä/ö/ü/ß folding
+  // Marking: lower-case, collapse spaces, fold ä/ö/ü/ß; require "?" if expected has it
   function normDE(s){
-    const map = { "ä":"ae", "ö":"oe", "ü":"ue", "ß":"ss" };
+    const map = { "ä":"ae","ö":"oe","ü":"ue","ß":"ss" };
     return (s||"").trim().toLowerCase().replace(/\s+/g," ").replace(/[äöüß]/g, m=>map[m]);
   }
-
-  // Marking with required "?" for questions
   function isCorrect(given, expected){
     const gRaw=(given||"").trim(), eRaw=(expected||"").trim();
     const isQ = /\?$/.test(eRaw);
@@ -343,10 +383,9 @@
     return normDE(gRaw) === normDE(eRaw);
   }
 
-  // Best-time per tense+direction (A+)
-  function bestKey(tense, dir){ return `turbo_aplus_best_${tense}_${dir}`; }
-  function getBest(tense, dir){ const v = localStorage.getItem(bestKey(tense, dir)); return v? parseFloat(v) : null; }
-  function saveBest(tense, dir, val){ localStorage.setItem(bestKey(tense, dir), String(val)); }
+  // Best time storage — per tense + direction + level
+  function bestKey(tense, dir, lvl){ return `turbo_aplus_best_${tense}_${dir}_${lvl}`; }
+  function getBest(tense, dir, lvl){ const v = localStorage.getItem(bestKey(tense, dir, lvl)); return v? parseFloat(v) : null; }
+  function saveBest(tense, dir, lvl, score){ localStorage.setItem(bestKey(tense, dir, lvl), String(score)); }
   function fmtBest(v){ return v==null ? "—" : v.toFixed(1)+"s"; }
-
 })();
