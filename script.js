@@ -1,24 +1,92 @@
-// TURBO: MTW German (Sein/Haben/Gehen) — voice + mic + highscores + unlocks
-// Same structure/flow as your original MTW game, just German.
-// Marking (German): pronouns required; case-insensitive; ä/ö/ü/ß ≡ ae/oe/ue/ss; spaces collapsed; "?" required for questions.
+// Turbo: A+ Edition — GERMAN (EN↔DE) with Mic + Read + High Scores
+// Works with the provided A+ index.html/style.css (no edits needed)
+
 (()=>{
-  const $ = s => document.querySelector(s), $$ = s => Array.from(document.querySelectorAll(s));
+  const $ = s => document.querySelector(s);
+  const $$ = s => Array.from(document.querySelectorAll(s));
 
-  // ----- CONFIG -----
-  const CONFIG = {
-    title: "MTW German (Sein/Haben/Gehen)",
-    // Same style unlock codes (change if you like)
-    codes: { D2: "MTW-D2-OPEN", D3: "MTW-D3-OPEN", FRIDAY: "MTW-FRI-OPEN" },
-    days: {
-      D1: { label: "Monday (sein)",    verbs: ["sein"] },
-      D2: { label: "Tuesday (haben)",  verbs: ["haben"] },
-      D3: { label: "Wednesday (gehen)", verbs: ["gehen"] }
+  // -------------------- CONFIG --------------------
+  const QUESTIONS_PER_RUN = 10;
+  const PENALTY_SECONDS = 30;
+
+  const DIRS = { EN2DE: "EN→DE", DE2EN: "DE→EN" };
+  let direction = "EN2DE";
+  let currentTense = "Present";
+  let startTime = 0, timerId = null, currentQuiz = [];
+
+  // Persons (7 slots like your other games)
+  const PERSONS = [
+    { en: "I",        de: "ich" },
+    { en: "you",      de: "du"  },           // you (sg.)
+    { en: "he",       de: "er"  },
+    { en: "she",      de: "sie" },
+    { en: "we",       de: "wir" },
+    { en: "you (pl)", de: "ihr" },
+    { en: "they",     de: "sie" }
+  ];
+
+  // Verb DB: Present & Präteritum (Past). Future = werden + INF.
+  // Arrays are [ich, du, er, sie, wir, ihr, sie(pl)]
+  const DB = {
+    sein: {
+      inf: "sein",
+      present: ["bin","bist","ist","ist","sind","seid","sind"],
+      past:    ["war","warst","war","war","waren","wart","waren"]
     },
-    QUESTIONS_PER_RUN: 10,
-    PENALTY_SECONDS: 30
+    haben: {
+      inf:"haben",
+      present:["habe","hast","hat","hat","haben","habt","haben"],
+      past:   ["hatte","hattest","hatte","hatte","hatten","hattet","hatten"]
+    },
+    gehen: {
+      inf:"gehen",
+      present:["gehe","gehst","geht","geht","gehen","geht","gehen"],
+      past:   ["ging","gingst","ging","ging","gingen","gingt","gingen"]
+    },
+    kommen: {
+      inf:"kommen",
+      present:["komme","kommst","kommt","kommt","kommen","kommt","kommen"],
+      past:   ["kam","kamst","kam","kam","kamen","kamt","kamen"]
+    },
+    machen: {
+      inf:"machen",
+      present:["mache","machst","macht","macht","machen","macht","machen"],
+      past:   ["machte","machtest","machte","machte","machten","machtet","machten"]
+    },
+    spielen: {
+      inf:"spielen",
+      present:["spiele","spielst","spielt","spielt","spielen","spielt","spielen"],
+      past:   ["spielte","spieltest","spielte","spielte","spielten","spieltet","spielten"]
+    },
+    lernen: {
+      inf:"lernen",
+      present:["lerne","lernst","lernt","lernt","lernen","lernt","lernen"],
+      past:   ["lernte","lerntest","lernte","lernte","lernten","lerntet","lernten"]
+    },
+    wohnen: {
+      inf:"wohnen",
+      present:["wohne","wohnst","wohnt","wohnt","wohnen","wohnt","wohnen"],
+      past:   ["wohnte","wohntest","wohnte","wohnte","wohnten","wohntet","wohnten"]
+    },
+    sprechen: {
+      inf:"sprechen",
+      present:["spreche","sprichst","spricht","spricht","sprechen","sprecht","sprechen"],
+      past:   ["sprach","sprachst","sprach","sprach","sprachen","spracht","sprachen"]
+    },
+    essen: {
+      inf:"essen",
+      present:["esse","isst","isst","isst","essen","esst","essen"],
+      past:   ["aß","aßest","aß","aß","aßen","aßt","aßen"] // 'ss' accepted via normalizer
+    },
+    trinken: {
+      inf:"trinken",
+      present:["trinke","trinkst","trinkt","trinkt","trinken","trinkt","trinken"],
+      past:   ["trank","trankst","trank","trank","tranken","trankt","tranken"]
+    }
   };
+  const VERB_KEYS = Object.keys(DB);
 
-  // ----- VOICE -----
+  // -------------------- VOICE (TTS) --------------------
   const VOICE = {
     enabled: 'speechSynthesis' in window,
     english: null, german: null,
@@ -27,7 +95,7 @@
       const pick = () => {
         const voices = speechSynthesis.getVoices();
         this.english = voices.find(v=>/^en[-_]/i.test(v.lang)) || voices.find(v=>/en/i.test(v.lang)) || voices[0] || null;
-        this.german = voices.find(v=>/^de[-_]/i.test(v.lang)) || voices.find(v=>/german/i.test(v.name)) || this.english;
+        this.german  = voices.find(v=>/^de[-_]/i.test(v.lang)) || voices.find(v=>/german/i.test(v.name)) || this.english;
       };
       pick();
       window.speechSynthesis.onvoiceschanged = pick;
@@ -44,276 +112,235 @@
   };
   VOICE.init();
 
+  // -------------------- MIC (Speech Recognition) --------------------
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
   const srSupported = !!SR;
 
-  // ----- DB (German) -----
-  // Arrays: [ich, du, er, sie, wir, ihr, sie(pl)]
-  const DB = {
-    sein:{present:["bin","bist","ist","ist","sind","seid","sind"],
-          past:["war","warst","war","war","waren","wart","waren"],
-          futureInf:"sein"},
-    haben:{present:["habe","hast","hat","hat","haben","habt","haben"],
-           past:["hatte","hattest","hatte","hatte","hatten","hattet","hatten"],
-           futureInf:"haben"},
-    gehen:{present:["gehe","gehst","geht","geht","gehen","geht","gehen"],
-           past:["ging","gingst","ging","ging","gingen","gingt","gingen"],
-           futureInf:"gehen"}
-  };
+  // -------------------- UI INIT --------------------
+  // Title stays: "Turbo: A+ Edition"
+  // Build the two level buttons in #level-list
+  function renderLevelList(){
+    const host = $("#level-list");
+    host.innerHTML = "";
 
-  const PERSONS = [
-    {label:"I", en:"I", de:"ich"},
-    {label:"you (sg.)", en:"you", de:"du", tag:" (you: singular)"},
-    {label:"he", en:"he", de:"er"},
-    {label:"she", en:"she", de:"sie"},
-    {label:"we", en:"we", de:"wir"},
-    {label:"you (pl.)", en:"you", de:"ihr", tag:" (you: plural)"},
-    {label:"they", en:"they", de:"sie"}
-  ];
+    const en2deBtn = document.createElement("button");
+    en2deBtn.className = "level-btn";
+    en2deBtn.textContent = `Start ${DIRS.EN2DE}`;
+    en2deBtn.onclick = ()=>{ direction = "EN2DE"; startRun(); };
 
-  const TENSES = ["Present","Past","Future"];
-  let currentTense = "Present";
-  let currentMode = null;
-  let startTime = 0, timerId = null;
+    const de2enBtn = document.createElement("button");
+    de2enBtn.className = "level-btn";
+    de2enBtn.textContent = `Start ${DIRS.DE2EN}`;
+    de2enBtn.onclick = ()=>{ direction = "DE2EN"; startRun(); };
 
-  // Title
-  document.title = `TURBO: ${CONFIG.title}`;
-  $("h1").innerHTML = `<span class="turbo">TURBO</span>: ${CONFIG.title}`;
+    host.appendChild(en2deBtn);
+    host.appendChild(de2enBtn);
 
-  setTenseButtons();
-  $("#codeBtn").onclick = handleCode;
-  renderModes();
-
-  // ----- Unlock state -----
-  function keyUnlocked(day){ return `turbo_mtw_unlocked_${CONFIG.title}_${day}`; }
-  function isUnlocked(day){
-    if (day === "D1") return true;      // Monday always open
-    if (day === "HOMEWORK") return true;
-    const v = localStorage.getItem(keyUnlocked(day));
-    return v === "1";
+    // Show best times per direction for the currently selected tense
+    const bestWrap = document.createElement("div");
+    bestWrap.style.marginTop = "6px";
+    const b1 = getBest(currentTense, "EN2DE");
+    const b2 = getBest(currentTense, "DE2EN");
+    bestWrap.textContent = `Best — ${DIRS.EN2DE}: ${fmtBest(b1)}   |   ${DIRS.DE2EN}: ${fmtBest(b2)}`;
+    host.appendChild(bestWrap);
   }
-  function unlock(day){ localStorage.setItem(keyUnlocked(day), "1"); }
+  renderLevelList();
 
-  function handleCode(){
-    const code = ($("#codeInput").value || "").trim();
-    const msg = $("#codeMsg");
-    const map = CONFIG.codes || {};
-    let matched = null;
-    for (const [day, c] of Object.entries(map)) { if (c === code) { matched = day; break; } }
-    if (!matched) { msg.textContent = "❌ Code not recognised"; return; }
-    if (matched === "FRIDAY") {
-      unlock("D2"); unlock("D3"); unlock("FRIDAY");
-      msg.textContent = "✅ Friday Test (and all days) unlocked!";
-    } else {
-      unlock(matched);
-      if (isUnlocked("D2") && isUnlocked("D3")) unlock("FRIDAY");
-      msg.textContent = `✅ ${CONFIG.days[matched]?.label || matched} unlocked`;
-    }
-    renderModes();
-    $("#codeInput").value = "";
-  }
+  // Tense buttons
+  $$("#tense-buttons .tense-button").forEach(btn=>{
+    btn.onclick = ()=>{
+      $$("#tense-buttons .tense-button").forEach(b=>b.classList.remove("active"));
+      btn.classList.add("active");
+      currentTense = btn.dataset.tense || "Present";
+      renderLevelList(); // refresh bests display for that tense
+    };
+  });
 
-  // ----- Menu -----
-  function renderModes(){
-    const host = $("#mode-list"); host.innerHTML = "";
-    host.appendChild(makeModeBtn("HOMEWORK", "Homework Tonight (All unlocked days)"));
-    host.appendChild(makeModeBtn("D1", CONFIG.days.D1.label));
-    host.appendChild(makeModeBtn("D2", CONFIG.days.D2.label));
-    host.appendChild(makeModeBtn("D3", CONFIG.days.D3.label));
-    host.appendChild(makeModeBtn("FRIDAY", "Friday Test (All week)"));
-  }
-  function makeModeBtn(modeKey, label){
-    const btn = document.createElement("button"); btn.className = "mode-btn"; btn.dataset.mode = modeKey;
-    const locked = (modeKey==="HOMEWORK") ? false
-                  : (modeKey==="D1") ? false
-                  : (modeKey==="FRIDAY") ? !isUnlocked("FRIDAY") && !(isUnlocked("D2") && isUnlocked("D3"))
-                  : !isUnlocked(modeKey);
-    btn.disabled = locked; 
-    const icon = locked ? "🔒" : "🔓";
-    const best = getBest(currentTense, modeKey);
-    btn.textContent = `${icon} ${label}${best!=null ? " — Best: "+best.toFixed(1)+"s" : ""}`;
-    btn.onclick = () => { if (!locked) startMode(modeKey); };
-    return btn;
-  }
-
-  // ----- Build quiz -----
-  function startMode(modeKey){
-    currentMode = modeKey;
-    $("#mode-list").style.display = "none";
-    $("#game").style.display = "block";
+  // -------------------- QUIZ BUILD --------------------
+  function startRun(){
     $("#results").innerHTML = "";
+    $("#game").style.display = "block";
     $("#back-button").style.display = "none";
+    $("#questions").innerHTML = "";
 
-    const pool = buildPoolForMode(modeKey, currentTense);
-    shuffle(pool);
-    const quiz = pool.slice(0, CONFIG.QUESTIONS_PER_RUN);
-
-    const qwrap = $("#questions"); qwrap.innerHTML = "";
-
-    // Voice bar
-    const vbar = $("#voice-bar");
-    if (VOICE.enabled) {
-      vbar.style.display = "flex";
-      $("#read-all").onclick = () => {
-        let i = 0; const items = quiz.map(q => q.prompt.replace(/\s*\(.*\)\s*$/,''));
-        const langs = quiz.map(q=>q.readLang);
-        const next = () => { if (i >= items.length) return; VOICE.speak(items[i], langs[i]); i++; setTimeout(next, 1700); };
-        next();
-      };
-    } else vbar.style.display = "none";
-
-    quiz.forEach((q,i) => {
-      const row = document.createElement("div");
-      row.className = "q";
-
-      const promptRow = document.createElement("div"); promptRow.className = "prompt-row";
-      const p = document.createElement("div"); p.className = "prompt"; p.textContent = `${i+1}. ${q.prompt}`;
-
-      const spk = document.createElement("button"); spk.className = "icon-btn"; spk.textContent = "🔊"; spk.title = "Read this question";
-      spk.onclick = ()=> VOICE.speak(q.prompt.replace(/\s*\(.*\)\s*$/,''), q.readLang);
-
-      const mic = document.createElement("button"); mic.className = "icon-btn"; mic.textContent = "🎤"; mic.title = srSupported ? "Dictate answer" : "Speech recognition not supported";
-      const input = document.createElement("input"); input.type = "text"; input.placeholder = "Type or dictate the German form (e.g., ich bin / bist du?)";
-      if (srSupported) {
-        mic.onclick = ()=>{ const rec = new SR(); rec.lang = "de-DE"; rec.interimResults = false; rec.maxAlternatives = 1;
-          mic.disabled = true; mic.textContent = "⏺️…";
-          rec.onresult = e => { const said = e.results[0][0].transcript || ""; input.value = said; };
-          rec.onerror = ()=>{}; rec.onend = ()=>{ mic.disabled=false; mic.textContent="🎤"; };
-          try { rec.start(); } catch(e) { mic.disabled=false; mic.textContent="🎤"; }
-        };
-      } else mic.disabled = true;
-
-      promptRow.appendChild(p); promptRow.appendChild(spk); promptRow.appendChild(mic);
-      row.appendChild(promptRow); row.appendChild(input); qwrap.appendChild(row);
-
-      input.addEventListener('focus', ()=>{ const a = $("#auto-read"); if(a && a.checked) VOICE.speak(q.prompt.replace(/\s*\(.*\)\s*$/,''), q.readLang); });
-    });
-
-    $("#submit").onclick = () => checkAnswers(quiz);
+    currentQuiz = makeQuiz();
+    renderQuestions(currentQuiz);
+    attachSubmit(currentQuiz);
     startTimer();
   }
 
-  function buildPoolForMode(modeKey, tense){
-    if (modeKey === "HOMEWORK") {
-      const open = ["D1","D2","D3"].filter(d => isUnlocked(d) || d==="D1");
-      return poolFromDays(open, tense);
-    } else if (modeKey === "FRIDAY") {
-      return poolFromDays(["D1","D2","D3"], tense);
-    } else {
-      return poolFromDays([modeKey], tense);
-    }
-  }
-
-  function poolFromDays(dayKeys, tense){
-    const kinds = ["pos","neg","q"]; const pool = [];
-    const persons = PERSONS;
-    dayKeys.forEach(d => {
-      const vlist = CONFIG.days[d]?.verbs || [];
-      vlist.forEach(v => {
-        const table = DB[v]; if (!table) return;
-        persons.forEach((p, idx) => {
-          const forms = getGermanForms(v, idx, tense);
-          const targets = { pos: forms.pos, neg: forms.neg, q: forms.q };
-          kinds.forEach(k => pool.push({ 
-            prompt: englishPrompt(v, tense, p, k), 
-            answer: targets[k],
-            readLang: 'en' // prompts are English like original
-          }));
+  function makeQuiz(){
+    const items = [];
+    const kinds = ["pos","neg","q"]; // positive / negative / question
+    // Make a big pool, then sample 10
+    VERB_KEYS.forEach(vk=>{
+      for (let pi=0; pi<PERSONS.length; pi++){
+        kinds.forEach(k=>{
+          items.push(buildItem(vk, pi, k));
         });
-      });
+      }
     });
-    return pool;
+    shuffle(items);
+    return items.slice(0, QUESTIONS_PER_RUN);
   }
 
-  // ----- German forms (answer builder) -----
-  function getGermanForms(verbKey, personIdx, tense){
-    const entry = DB[verbKey];
-    if (tense === "Present"){
-      const form = entry.present[personIdx];
-      const subj = PERSONS[personIdx].de;
-      return { pos: `${subj} ${form}`, neg: `${subj} ${form} nicht`, q: `${cap(form)} ${subj}?` };
-    } else if (tense === "Past"){
-      const form = entry.past[personIdx];
-      const subj = PERSONS[personIdx].de;
-      return { pos: `${subj} ${form}`, neg: `${subj} ${form} nicht`, q: `${cap(form)} ${subj}?` };
+  function buildItem(verbKey, personIndex, kind){
+    const verb = DB[verbKey];
+    const person = PERSONS[personIndex];
+    const en = normalizeSubject(person.en); // for English side
+    const de = person.de;                    // for German side
+
+    // GERMAN answers
+    let dePos="", deNeg="", deQ="";
+    if (currentTense === "Present"){
+      const f = verb.present[personIndex];
+      dePos = `${de} ${f}`;
+      deNeg = `${de} ${f} nicht`;
+      deQ   = `${capFirst(f)} ${de}?`;
+    } else if (currentTense === "Past"){
+      const f = verb.past[personIndex];
+      dePos = `${de} ${f}`;
+      deNeg = `${de} ${f} nicht`;
+      deQ   = `${capFirst(f)} ${de}?`;
     } else {
-      // Future: werden + inf
-      const werden = ["werde","wirst","wird","wird","werden","werdet","werden"][personIdx];
-      const subj = PERSONS[personIdx].de;
-      return { pos: `${subj} ${werden} ${entry.futureInf}`, neg: `${subj} ${werden} nicht ${entry.futureInf}`, q: `${cap(werden)} ${subj} ${entry.futureInf}?` };
+      const werdenForms = ["werde","wirst","wird","wird","werden","werdet","werden"];
+      const w = werdenForms[personIndex];
+      dePos = `${de} ${w} ${verb.inf}`;
+      deNeg = `${de} ${w} nicht ${verb.inf}`;
+      deQ   = `${capFirst(w)} ${de} ${verb.inf}?`;
     }
+
+    // ENGLISH answers
+    const base = englishBase(verbKey);
+    const past = englishPast(verbKey);
+    const third = isThird(en);
+    let enPos="", enNeg="", enQ="";
+    if (currentTense === "Present"){
+      enPos = `${en} ${third ? thirdForm(base) : base}`;
+      enNeg = `${en} ${third ? "does" : "do"} not ${base}`;
+      enQ   = `${third ? "Does" : "Do"} ${en} ${base}?`;
+    } else if (currentTense === "Past"){
+      enPos = `${en} ${past}`;
+      enNeg = `${en} did not ${base}`;
+      enQ   = `Did ${en} ${base}?`;
+    } else {
+      enPos = `${en} will ${base}`;
+      enNeg = `${en} will not ${base}`;
+      enQ   = `Will ${en} ${base}?`;
+    }
+
+    // Direction decides prompt vs expected and read language
+    let prompt="", answer="", readLang = (direction==="EN2DE" ? "en" : "de");
+    if (direction === "EN2DE"){
+      if (kind==="pos"){ prompt = enPos; answer = dePos; }
+      if (kind==="neg"){ prompt = enNeg; answer = deNeg; }
+      if (kind==="q"){   prompt = enQ;   answer = deQ;   }
+    } else {
+      if (kind==="pos"){ prompt = dePos; answer = enPos; }
+      if (kind==="neg"){ prompt = deNeg; answer = enNeg; }
+      if (kind==="q"){   prompt = deQ;   answer = enQ;   }
+    }
+
+    return { verbKey, personIndex, kind, prompt, answer, readLang };
   }
 
-  // ----- English prompts (same style) -----
-  function englishPrompt(verb, tense, person, kind){
-    const s = person.en, t = person.tag || "";
-    if (verb === "sein") {
-      if (tense === "Present") {
-        if (kind==="pos") return `${cap(s)}${t} ${bePres(s)} (sein)`;
-        if (kind==="neg") return `${cap(s)}${t} ${bePresNeg(s)} (sein)`;
-        if (kind==="q")   return `${beQPres(person)} (sein)`;
-      } else if (tense === "Past") {
-        if (kind==="pos") return `${cap(s)}${t} ${bePast(s)} (sein)`;
-        if (kind==="neg") return `${cap(s)}${t} ${bePastNeg(s)} (sein)`;
-        if (kind==="q")   return `${beQPast(person)} (sein)`;
-      } else {
-        if (kind==="pos") return `${cap(s)}${t} will be (sein)`;
-        if (kind==="neg") return `${cap(s)}${t} will not be (sein)`;
-        if (kind==="q")   return `Will ${s}${t} be? (sein)`;
-      }
-    } else if (verb === "haben") {
-      if (tense === "Present") {
-        if (kind==="pos") return `${cap(s)}${t} ${havePres(s)} (haben)`;
-        if (kind==="neg") return `${cap(s)}${t} ${havePresNeg(s)} (haben)`;
-        if (kind==="q")   return `${haveQPres(person)} (haben)`;
-      } else if (tense === "Past") {
-        if (kind==="pos") return `${cap(s)}${t} had (haben)`;
-        if (kind==="neg") return `${cap(s)}${t} did not have (haben)`;
-        if (kind==="q")   return `Did ${s}${t} have? (haben)`;
-      } else {
-        if (kind==="pos") return `${cap(s)}${t} will have (haben)`;
-        if (kind==="neg") return `${cap(s)}${t} will not have (haben)`;
-        if (kind==="q")   return `Will ${s}${t} have? (haben)`;
-      }
-    } else if (verb === "gehen") {
-      if (tense === "Present") {
-        if (kind==="pos") return `${cap(s)}${t} ${goPres(s)} (gehen)`;
-        if (kind==="neg") return `${cap(s)}${t} ${doNeg(s)} go (gehen)`;
-        if (kind==="q")   return `${doQ(s)} ${s}${t} go? (gehen)`;
-      } else if (tense === "Past") {
-        if (kind==="pos") return `${cap(s)}${t} went (gehen)`;
-        if (kind==="neg") return `${cap(s)}${t} did not go (gehen)`;
-        if (kind==="q")   return `Did ${s}${t} go? (gehen)`;
-      } else {
-        if (kind==="pos") return `${cap(s)}${t} will go (gehen)`;
-        if (kind==="neg") return `${cap(s)}${t} will not go (gehen)`;
-        if (kind==="q")   return `Will ${s}${t} go? (gehen)`;
-      }
-    }
-    return `${cap(s)}${t}`;
-  }
-  const cap = s => s ? s[0].toUpperCase()+s.slice(1) : s;
-  const is3 = s => (s==="he"||s==="she"||s==="it");
-  // be
-  const bePres = s => s==="I" ? "am" : (s==="you"||s==="we"||s==="they") ? "are" : "is";
-  const bePresNeg = s => s==="I" ? "am not" : bePres(s) + " not";
-  const beQPres = p => { const s = p.en, t = p.tag||""; if(s==="I")return"Am I?"; if(s==="you")return`Are you${t}?`; if(s==="we")return"Are we?"; if(s==="they")return"Are they?"; return `Is ${s}?`; };
-  const bePast = s => (s==="I"||s==="he"||s==="she"||s==="it") ? "was" : "were";
-  const bePastNeg = s => bePast(s)+" not";
-  const beQPast = p => { const s=p.en, t=p.tag||""; if(s==="I")return"Was I?"; if(s==="you")return`Were you${t}?`; if(s==="he"||s==="she"||s==="it")return`Was ${s}?`; return `Were ${s}?`; };
-  // have
-  const havePres = s => (s==="he"||s==="she"||s==="it") ? "has" : "have";
-  const havePresNeg = s => `${(is3(s)?'does':'do')} not have`;
-  const haveQPres = p => `${is3(p.en)?'Does':'Do'} ${p.en}${p.tag||""} have?`;
-  // go/do aux
-  const goPres = s => (is3(s) ? "goes" : "go");
-  const doQ = s => is3(s) ? "Does" : "Do";
-  const doNeg = s => is3(s) ? "does" : "do";
+  function renderQuestions(quiz){
+    const wrap = $("#questions");
+    quiz.forEach((q,i)=>{
+      const row = document.createElement("div");
+      const label = document.createElement("div");
 
-  // ----- Timer & scoring -----
+      // prompt + tiny read/mic buttons inline (keeps A+ look)
+      const readBtn = document.createElement("button");
+      readBtn.textContent = "🔊";
+      readBtn.style.marginLeft = "6px";
+      readBtn.title = "Read this";
+      readBtn.onclick = ()=> VOICE.speak(q.prompt, q.readLang);
+
+      const micBtn = document.createElement("button");
+      micBtn.textContent = "🎤";
+      micBtn.style.marginLeft = "6px";
+      micBtn.title = srSupported ? "Dictate your answer" : "Speech recognition not supported";
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = (direction==="EN2DE")
+        ? (q.kind==="q" ? "z.B. Gehe ich?" : "z.B. ich gehe / ich gehe nicht")
+        : (q.kind==="q" ? "e.g. Do I go?" : "e.g. I go / I do not go");
+
+      if (srSupported) {
+        micBtn.onclick = ()=>{
+          const rec = new SR();
+          rec.lang = (direction==="EN2DE") ? "de-DE" : "en-GB";
+          rec.interimResults = false; rec.maxAlternatives = 1;
+          micBtn.disabled = true; micBtn.textContent = "⏺️…";
+          rec.onresult = e => { const said = e.results[0][0].transcript || ""; input.value = said; };
+          rec.onerror = ()=>{};
+          rec.onend = ()=>{ micBtn.disabled=false; micBtn.textContent="🎤"; };
+          try { rec.start(); } catch(e) { micBtn.disabled=false; micBtn.textContent="🎤"; }
+        };
+      } else micBtn.disabled = true;
+
+      label.textContent = `${i+1}. ${q.prompt}`;
+      label.appendChild(readBtn);
+      label.appendChild(micBtn);
+      row.appendChild(label);
+      row.appendChild(input);
+      wrap.appendChild(row);
+    });
+  }
+
+  function attachSubmit(quiz){
+    $("#submit").onclick = ()=>{
+      stopTimer();
+      const inputs = $$("#questions input");
+      let correct = 0;
+      const results = $("#results");
+      results.innerHTML = "";
+      const items = [];
+
+      inputs.forEach((inp, i)=>{
+        const expected = quiz[i].answer;
+        const ok = isCorrect(inp.value, expected);
+        if (ok) correct++;
+        const line = document.createElement("div");
+        line.style.margin = "6px 0";
+        line.textContent = `${i+1}. ${quiz[i].prompt}  →  ${quiz[i].answer}`;
+        line.style.background = ok ? "rgba(46,204,113,0.15)" : "rgba(231,76,60,0.15)";
+        line.style.padding = "6px 8px";
+        line.style.borderRadius = "8px";
+        items.push(line);
+      });
+
+      const elapsed = (performance.now() - startTime)/1000;
+      const penalty = (quiz.length - correct) * PENALTY_SECONDS;
+      const finalTime = elapsed + penalty;
+
+      const summary = document.createElement("div");
+      summary.style.margin = "10px 0";
+      summary.innerHTML = `<strong>🏁 Final Time:</strong> ${finalTime.toFixed(1)}s — ✅ ${correct}/${quiz.length}
+        ${penalty>0 ? `<div>⏱️ Penalty: +${penalty}s (${PENALTY_SECONDS}s per incorrect)</div>` : ""}`;
+      results.prepend(summary);
+      items.forEach(li => results.appendChild(li));
+
+      // Save best for this tense+direction
+      const prevBest = getBest(currentTense, direction);
+      if (prevBest == null || finalTime < prevBest) {
+        saveBest(currentTense, direction, finalTime);
+      }
+
+      $("#back-button").style.display = "inline-block";
+      $("#back-button").onclick = ()=>{
+        $("#game").style.display = "none";
+        $("#results").innerHTML = "";
+      };
+    };
+  }
+
+  // -------------------- TIMER --------------------
   function startTimer(){
     startTime = performance.now();
-    $("#timer").textContent = "Time: 0s";
+    $("#timer").textContent = "Time: 0.0s";
     clearInterval(timerId);
     timerId = setInterval(()=>{
       const e = (performance.now() - startTime)/1000;
@@ -322,46 +349,52 @@
   }
   function stopTimer(){ clearInterval(timerId); }
 
-  function checkAnswers(quiz){
-    stopTimer();
-    const inputs = $$("#questions .q input");
-    let correct = 0; const items = [];
-    inputs.forEach((inp,i)=>{
-      const expected = quiz[i].answer;
-      const ok = isCorrect(inp.value, expected);
-      inp.classList.remove("good","bad"); inp.classList.add(ok ? "good" : "bad");
-      if (ok) correct++;
-      const li = document.createElement("li");
-      li.className = ok ? "correct" : "incorrect";
-      li.textContent = `${i+1}. ${quiz[i].prompt} → ${quiz[i].answer}`;
-      items.push(li);
-    });
-    const elapsed = (performance.now() - startTime)/1000;
-    const penalty = (quiz.length - correct) * CONFIG.PENALTY_SECONDS;
-    const finalTime = elapsed + penalty;
-
-    if (currentMode) saveBest(currentTense, currentMode, finalTime);
-
-    const summary = document.createElement("div");
-    summary.className = "result-summary";
-    summary.innerHTML = [
-      `<div class="final-time">🏁 Final Time: ${finalTime.toFixed(1)}s</div>`,
-      `<div class="line">✅ Correct: ${correct}/${quiz.length}</div>`,
-      penalty>0 ? `<div class="line">⏱️ Penalty: +${penalty}s (${CONFIG.PENALTY_SECONDS}s per incorrect)</div>` : ``
-    ].join("");
-
-    const ul = document.createElement("ul"); items.forEach(li => ul.appendChild(li));
-    const results = $("#results"); results.innerHTML = ""; results.appendChild(summary); results.appendChild(ul);
-
-    if (VOICE.enabled) VOICE.speak(`You got ${correct} out of ${quiz.length}. Final time ${finalTime.toFixed(1)} seconds.`, 'en');
-
-    $("#back-button").style.display = "inline-block";
-    $("#back-button").onclick = ()=>{ $("#game").style.display = "none"; $("#mode-list").style.display = "flex"; renderModes(); };
+  // -------------------- HELPERS --------------------
+  function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } }
+  function capFirst(s){ return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+  function isThird(en){ return en==="he" || en==="she" || en==="it"; }
+  function normalizeSubject(en){ return en==="you (pl)" ? "you" : en; }
+  function thirdForm(base){
+    if (base === "have") return "has";
+    if (base === "go") return "goes";
+    if (base.endsWith("y")) return base.slice(0,-1)+"ies";
+    return base + "s";
+  }
+  function englishBase(vk){
+    switch(vk){
+      case "sein": return "be";
+      case "haben": return "have";
+      case "gehen": return "go";
+      case "kommen": return "come";
+      case "machen": return "make";
+      case "spielen": return "play";
+      case "lernen": return "learn";
+      case "wohnen": return "live";
+      case "sprechen": return "speak";
+      case "essen": return "eat";
+      case "trinken": return "drink";
+    }
+    return vk;
+  }
+  function englishPast(vk){
+    switch(vk){
+      case "sein": return "was"; // (generic singular; OK for quick translation)
+      case "haben": return "had";
+      case "gehen": return "went";
+      case "kommen": return "came";
+      case "machen": return "made";
+      case "spielen": return "played";
+      case "lernen": return "learned";
+      case "wohnen": return "lived";
+      case "sprechen": return "spoke";
+      case "essen": return "ate";
+      case "trinken": return "drank";
+    }
+    return englishBase(vk) + "ed";
   }
 
-  // ----- Marking -----
-  // Normalize:
-  // - lower-case
+  // Normalize (German marking):
+  // - lowercase
   // - collapse spaces
   // - fold ä→ae, ö→oe, ü→ue, ß→ss
   function normDE(s){
@@ -372,14 +405,17 @@
       .replace(/\s+/g," ")
       .replace(/[äöüß]/g, m => map[m]);
   }
+
+  // For questions, the final ? is required (no leading symbol needed)
   function isCorrect(given, expected){
     const gRaw = (given||"").trim();
     const eRaw = (expected||"").trim();
 
-    // Questions must keep a trailing "?"
-    const eIsQ = /\?$/.test(eRaw);
-    if (eIsQ) {
-      if (!/\?$/.test(gRaw)) return false;
+    // In EN→DE mode we’re checking German by default; in DE→EN we compare English.
+    // But the same normalization rules are fine for both (no diacritics in EN side).
+    const isQ = /\?$/.test(eRaw);
+    if (isQ) {
+      if (!/\?$/.test(gRaw)) return false; // must end with '?'
       const gCore = normDE(gRaw.slice(0,-1));
       const eCore = normDE(eRaw.slice(0,-1));
       return gCore === eCore;
@@ -387,22 +423,10 @@
     return normDE(gRaw) === normDE(eRaw);
   }
 
-  // ----- Best per (tense, mode) -----
-  function bestKey(tense, mode){ return `turbo_mtw_best_${CONFIG.title}_${tense}_${mode}`; }
-  function getBest(tense, mode){ const v = localStorage.getItem(bestKey(tense, mode)); return v ? parseFloat(v) : null; }
-  function saveBest(tense, mode, score){
-    const cur = getBest(tense, mode);
-    const best = (cur == null || score < cur) ? score : cur;
-    localStorage.setItem(bestKey(tense, mode), best.toString());
-  }
-
-  function setTenseButtons(){
-    $$(".tense-button").forEach(b=>{
-      b.classList.toggle("active", b.dataset.tense === currentTense);
-      b.onclick = ()=>{ currentTense = b.dataset.tense; $$(".tense-button").forEach(x=>x.classList.remove("active")); b.classList.add("active"); renderModes(); };
-    });
-  }
-
-  function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } }
+  // Best time storage per tense+direction
+  function bestKey(tense, dir){ return `turbo_aplus_best_${tense}_${dir}`; }
+  function getBest(tense, dir){ const v = localStorage.getItem(bestKey(tense, dir)); return v ? parseFloat(v) : null; }
+  function saveBest(tense, dir, score){ localStorage.setItem(bestKey(tense, dir), String(score)); }
+  function fmtBest(v){ return v==null ? "—" : v.toFixed(1)+"s"; }
 
 })();
