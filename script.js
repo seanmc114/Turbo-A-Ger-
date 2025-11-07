@@ -1,11 +1,8 @@
-// Turbo: A+ Edition — German Translation Game (EN↔DE)
-// Fits the provided index.html & style.css
-// - Tenses: Present / Past (Präteritum) / Future (werden + INF)
-// - Directions: EN→DE and DE→EN (toggle in the UI)
+// Turbo: A+ Edition — German Translation Game (Suite look + Voice + Mic)
+// - EN↔DE toggle, Present/Past/Future tenses
 // - Pronouns required in German answers
-// - Marking: case-insensitive, ä/ö/ü/ß ≡ ae/oe/ue/ss, spaces collapsed
+// - Marking: case-insensitive; ä/ö/ü/ß ≡ ae/oe/ue/ss; spaces collapsed
 // - Questions must end with "?"
-
 (()=>{
   const $ = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -20,19 +17,19 @@
   let currentTense = "Present";
   let startTime = 0, timerId = null, currentQuiz = [];
 
-  // Persons (7 slots to match your previous style)
+  // Persons: 7 slots for consistency with your older games
   const PERSONS = [
     { en: "I",      de: "ich"  },
-    { en: "you",    de: "du"   },           // you (sg.)
+    { en: "you (sg.)", de: "du"   },
     { en: "he",     de: "er"   },
     { en: "she",    de: "sie"  },
     { en: "we",     de: "wir"  },
-    { en: "you(pl)",de: "ihr"  },
+    { en: "you (pl.)", de: "ihr"  },
     { en: "they",   de: "sie"  }
   ];
 
-  // Verb database: present & präteritum (past) hard-coded for correctness; future = werden + INF
-  // Each form array is [ich, du, er, sie, wir, ihr, sie(pl)]
+  // Verb DB: present & präteritum (past) carefully set; future = werden + INF
+  // Each array is [ich, du, er, sie, wir, ihr, sie(pl)]
   const DB = {
     sein: {
       inf: "sein",
@@ -82,8 +79,7 @@
     essen: {
       inf:"essen",
       present:["esse","isst","isst","isst","essen","esst","essen"],
-      // Using ß forms (accepted as 'ss' too)
-      past:   ["aß","aßest","aß","aß","aßen","aßt","aßen"]
+      past:   ["aß","aßest","aß","aß","aßen","aßt","aßen"] // 'ss' accepted too
     },
     trinken: {
       inf:"trinken",
@@ -91,37 +87,44 @@
       past:   ["trank","trankst","trank","trank","tranken","trankt","tranken"]
     }
   };
-
   const VERB_KEYS = Object.keys(DB);
+
+  // -------------------- VOICE (TTS) --------------------
+  const VOICE = {
+    enabled: 'speechSynthesis' in window,
+    english: null, german: null,
+    init(){
+      if(!this.enabled) return;
+      const pick = () => {
+        const voices = speechSynthesis.getVoices();
+        this.english = voices.find(v=>/^en[-_]/i.test(v.lang)) || voices.find(v=>/en/i.test(v.lang)) || voices[0] || null;
+        // Prefer de-DE; fall back to any 'German' name; else English
+        this.german = voices.find(v=>/^de[-_]/i.test(v.lang)) || voices.find(v=>/german/i.test(v.name)) || this.english;
+      };
+      pick();
+      window.speechSynthesis.onvoiceschanged = pick;
+    },
+    speak(text, lang='en'){
+      if(!this.enabled || !text) return;
+      const u = new SpeechSynthesisUtterance(text);
+      const voice = lang.startsWith('de') ? (this.german || this.english) : (this.english || this.german);
+      if(voice) u.voice = voice;
+      u.lang = voice?.lang || (lang.startsWith('de') ? 'de-DE' : 'en-GB');
+      try { speechSynthesis.cancel(); } catch(e){}
+      speechSynthesis.speak(u);
+    }
+  };
+  VOICE.init();
+
+  // -------------------- MIC (Speech Recognition) --------------------
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  const srSupported = !!SR;
 
   // -------------------- UI INIT --------------------
   document.title = "Turbo: A+ Edition — German";
-  $("h1").innerHTML = `<span class="turbo">Turbo</span> A+ Edition — German`;
+  $("h1").innerHTML = `<span class="turbo">TURBO</span>: A+ Edition — German`;
 
-  // Build direction buttons inside #level-list
-  function renderLevelList(){
-    const host = $("#level-list");
-    host.innerHTML = "";
-    const dirWrap = document.createElement("div");
-    dirWrap.style.margin = "12px 0";
-
-    const en2deBtn = document.createElement("button");
-    en2deBtn.textContent = `Start ${DIRS.EN2DE}`;
-    en2deBtn.className = "level-btn";
-    en2deBtn.onclick = ()=>{ direction = "EN2DE"; startRun(); };
-
-    const de2enBtn = document.createElement("button");
-    de2enBtn.textContent = `Start ${DIRS.DE2EN}`;
-    de2enBtn.className = "level-btn";
-    de2enBtn.onclick = ()=>{ direction = "DE2EN"; startRun(); };
-
-    dirWrap.appendChild(en2deBtn);
-    dirWrap.appendChild(de2enBtn);
-    host.appendChild(dirWrap);
-  }
-  renderLevelList();
-
-  // Tense buttons
+  // Tense buttons (default Present)
   $$("#tense-buttons .tense-button").forEach(btn=>{
     btn.onclick = ()=>{
       $$("#tense-buttons .tense-button").forEach(b=>b.classList.remove("active"));
@@ -129,13 +132,27 @@
       currentTense = btn.dataset.tense || "Present";
     };
   });
-  // default active
   const presentBtn = $$("#tense-buttons .tense-button").find(b=>b.dataset.tense==="Present");
   if (presentBtn) presentBtn.classList.add("active");
+
+  // Direction buttons in the classic "modes" list
+  function renderLevelList(){
+    const host = $("#level-list"); host.innerHTML = "";
+    host.appendChild(makeModeBtn("EN2DE", `Start ${DIRS.EN2DE}`));
+    host.appendChild(makeModeBtn("DE2EN", `Start ${DIRS.DE2EN}`));
+  }
+  function makeModeBtn(modeKey, label){
+    const btn = document.createElement("button"); btn.className = "mode-btn";
+    btn.textContent = label;
+    btn.onclick = () => { direction = modeKey; startRun(); };
+    return btn;
+  }
+  renderLevelList();
 
   // -------------------- QUIZ BUILD --------------------
   function startRun(){
     $("#results").innerHTML = "";
+    $("#level-list").style.display = "none";
     $("#game").style.display = "block";
     $("#back-button").style.display = "none";
     $("#questions").innerHTML = "";
@@ -143,16 +160,13 @@
     currentQuiz = makeQuiz();
     renderQuestions(currentQuiz);
     attachSubmit(currentQuiz);
+    setVoiceBar(currentQuiz);
     startTimer();
   }
 
   function makeQuiz(){
     const items = [];
-    // Build pool of (verb, personIndex, kind)
-    // kind: "pos" | "neg" | "q"
-    const kinds = ["pos","neg","q"];
-
-    // Generate a large pool then sample 10
+    const kinds = ["pos","neg","q"]; // positive, negative, question
     VERB_KEYS.forEach(vk=>{
       for (let pi=0; pi<PERSONS.length; pi++){
         kinds.forEach(k=>{
@@ -160,7 +174,6 @@
         });
       }
     });
-
     shuffle(items);
     return items.slice(0, QUESTIONS_PER_RUN);
   }
@@ -171,72 +184,86 @@
     const en = person.en;
     const de = person.de;
 
-    // --- Build German forms for expected answers ---
-    let deAnswerPos = "", deAnswerNeg = "", deAnswerQ = "";
-
+    // ---- GERMAN answers ----
+    let dePos="", deNeg="", deQ="";
     if (currentTense === "Present"){
       const form = verb.present[personIndex];
-      deAnswerPos = `${de} ${form}`;
-      deAnswerNeg = `${de} ${form} nicht`;
-      // Yes/no question: invert verb & subject
-      deAnswerQ   = `${capFirst(form)} ${de}?`;
+      dePos = `${de} ${form}`;
+      deNeg = `${de} ${form} nicht`;
+      deQ   = `${capFirst(form)} ${de}?`;
     } else if (currentTense === "Past"){
       const form = verb.past[personIndex];
-      deAnswerPos = `${de} ${form}`;
-      deAnswerNeg = `${de} ${form} nicht`;
-      deAnswerQ   = `${capFirst(form)} ${de}?`;
+      dePos = `${de} ${form}`;
+      deNeg = `${de} ${form} nicht`;
+      deQ   = `${capFirst(form)} ${de}?`;
     } else {
-      // Future = werden + INF; negation before INF
-      const werden = ["werde","wirst","wird","wird","werden","werdet","werden"][personIndex];
-      deAnswerPos = `${de} ${werden} ${verb.inf}`;
-      deAnswerNeg = `${de} ${werden} nicht ${verb.inf}`;
-      deAnswerQ   = `${capFirst(werden)} ${de} ${verb.inf}?`;
+      const werdenForms = ["werde","wirst","wird","wird","werden","werdet","werden"];
+      const w = werdenForms[personIndex];
+      dePos = `${de} ${w} ${verb.inf}`;
+      deNeg = `${de} ${w} nicht ${verb.inf}`;
+      deQ   = `${capFirst(w)} ${de} ${verb.inf}?`;
     }
 
-    // --- Build English prompts/answers ---
-    const enVerb = englishBase(verbKey);  // infinitive in EN
+    // ---- ENGLISH answers ----
+    const enBase = englishBase(verbKey);
     const enPast = englishPast(verbKey);
     const en3rd  = english3rd(verbKey);
-
-    let enPrompt = "", enAnswerPos = "", enAnswerNeg = "", enAnswerQ = "";
-
+    let enPos="", enNeg="", enQ="";
     if (currentTense === "Present"){
-      const goes = en3rd;
-      enAnswerPos = `${enSubject(en)} ${en === "he" || en === "she" ? goes : enVerb}`;
-      enAnswerNeg = `${enSubject(en)} ${enAuxDo(en)} not ${enVerb}`;
-      enAnswerQ   = `${enAuxDoQ(en)} ${enSubject(en)} ${enVerb}?`;
+      const third = (en === "he" || en === "she");
+      enPos = `${enSubject(en)} ${third ? en3rd : enBase}`;
+      enNeg = `${enSubject(en)} ${enAuxDo(en)} not ${enBase}`;
+      enQ   = `${enAuxDoQ(en)} ${enSubject(en)} ${enBase}?`;
     } else if (currentTense === "Past"){
-      enAnswerPos = `${enSubject(en)} ${enPast}`;
-      enAnswerNeg = `${enSubject(en)} did not ${enVerb}`;
-      enAnswerQ   = `Did ${enSubject(en)} ${enVerb}?`;
+      enPos = `${enSubject(en)} ${enPast}`;
+      enNeg = `${enSubject(en)} did not ${enBase}`;
+      enQ   = `Did ${enSubject(en)} ${enBase}?`;
     } else {
-      enAnswerPos = `${enSubject(en)} will ${enVerb}`;
-      enAnswerNeg = `${enSubject(en)} will not ${enVerb}`;
-      enAnswerQ   = `Will ${enSubject(en)} ${enVerb}?`;
+      enPos = `${enSubject(en)} will ${enBase}`;
+      enNeg = `${enSubject(en)} will not ${enBase}`;
+      enQ   = `Will ${enSubject(en)} ${enBase}?`;
     }
 
-    // Direction determines prompt vs expected
-    let prompt = "", answer = "";
+    // Direction
+    let prompt="", answer="";
     if (direction === "EN2DE"){
-      if (kind==="pos"){ prompt = `${enAnswerPos}`; answer = deAnswerPos; }
-      if (kind==="neg"){ prompt = `${enAnswerNeg}`; answer = deAnswerNeg; }
-      if (kind==="q"){   prompt = `${enAnswerQ}`;   answer = deAnswerQ;   }
+      if (kind==="pos"){ prompt=enPos; answer=dePos; }
+      if (kind==="neg"){ prompt=enNeg; answer=deNeg; }
+      if (kind==="q"){   prompt=enQ;   answer=deQ;   }
     } else {
-      if (kind==="pos"){ prompt = `${deAnswerPos}`; answer = enAnswerPos; }
-      if (kind==="neg"){ prompt = `${deAnswerNeg}`; answer = enAnswerNeg; }
-      if (kind==="q"){   prompt = `${deAnswerQ}`;   answer = enAnswerQ;   }
+      if (kind==="pos"){ prompt=dePos; answer=enPos; }
+      if (kind==="neg"){ prompt=deNeg; answer=enNeg; }
+      if (kind==="q"){   prompt=deQ;   answer=enQ;   }
     }
 
-    return { verbKey, personIndex, kind, prompt, answer };
+    // For Read All: pick the language to voice based on prompt
+    const speakLang = (direction==="EN2DE") ? 'en' : 'de';
+    return { verbKey, personIndex, kind, prompt, answer, speakLang };
   }
 
   function renderQuestions(quiz){
     const wrap = $("#questions");
     quiz.forEach((q,i)=>{
       const row = document.createElement("div");
+      row.className = "q";
+
+      const promptRow = document.createElement("div");
+      promptRow.className = "prompt-row";
+
       const label = document.createElement("div");
+      label.className = "prompt";
       label.textContent = `${i+1}. ${q.prompt}`;
-      label.style.marginTop = "8px";
+
+      const spk = document.createElement("button");
+      spk.className = "icon-btn";
+      spk.textContent = "🔊";
+      spk.title = "Read this";
+      spk.onclick = ()=> VOICE.speak(q.prompt, q.speakLang);
+
+      const mic = document.createElement("button");
+      mic.className = "icon-btn";
+      mic.textContent = "🎤";
+      mic.title = srSupported ? "Dictate your answer" : "Speech recognition not supported";
 
       const input = document.createElement("input");
       input.type = "text";
@@ -244,9 +271,31 @@
         ? (q.kind==="q" ? "z.B. Gehe ich?" : "z.B. ich gehe / ich gehe nicht")
         : (q.kind==="q" ? "e.g. Do I go?" : "e.g. I go / I do not go");
 
-      row.appendChild(label);
+      if (srSupported) {
+        mic.onclick = ()=>{
+          const rec = new SR();
+          rec.lang = (direction==="EN2DE") ? "de-DE" : "en-GB";
+          rec.interimResults = false; rec.maxAlternatives = 1;
+          mic.disabled = true; mic.textContent = "⏺️…";
+          rec.onresult = e => { const said = e.results[0][0].transcript || ""; input.value = said; };
+          rec.onerror = ()=>{};
+          rec.onend = ()=>{ mic.disabled=false; mic.textContent="🎤"; };
+          try { rec.start(); } catch(e) { mic.disabled=false; mic.textContent="🎤"; }
+        };
+      } else mic.disabled = true;
+
+      promptRow.appendChild(label);
+      promptRow.appendChild(spk);
+      promptRow.appendChild(mic);
+      row.appendChild(promptRow);
       row.appendChild(input);
       wrap.appendChild(row);
+
+      // auto-read on focus (if enabled)
+      input.addEventListener('focus', ()=>{
+        const a = $("#auto-read");
+        if (a && a.checked) VOICE.speak(q.prompt, q.speakLang);
+      });
     });
   }
 
@@ -257,18 +306,19 @@
       let correct = 0;
       const results = $("#results");
       results.innerHTML = "";
+      const items = [];
 
       inputs.forEach((inp, i)=>{
         const expected = quiz[i].answer;
         const ok = isCorrect(inp.value, expected);
+        inp.classList.remove("good","bad");
+        inp.classList.add(ok ? "good" : "bad");
         if (ok) correct++;
-        const line = document.createElement("div");
-        line.style.margin = "6px 0";
-        line.textContent = `${i+1}. ${quiz[i].prompt}  →  ${quiz[i].answer}`;
-        line.style.background = ok ? "rgba(46,204,113,0.15)" : "rgba(231,76,60,0.15)";
-        line.style.padding = "6px 8px";
-        line.style.borderRadius = "8px";
-        results.appendChild(line);
+
+        const li = document.createElement("li");
+        li.className = ok ? "correct" : "incorrect";
+        li.textContent = `${i+1}. ${quiz[i].prompt} → ${quiz[i].answer}`;
+        items.push(li);
       });
 
       const elapsed = (performance.now() - startTime)/1000;
@@ -276,17 +326,44 @@
       const finalTime = elapsed + penalty;
 
       const summary = document.createElement("div");
-      summary.style.margin = "10px 0";
-      summary.innerHTML = `<strong>🏁 Final Time:</strong> ${finalTime.toFixed(1)}s — ✅ ${correct}/${quiz.length}
-        ${penalty>0 ? `<div>⏱️ Penalty: +${penalty}s (${PENALTY_SECONDS}s per incorrect)</div>` : ""}`;
-      results.prepend(summary);
+      summary.className = "result-summary";
+      summary.innerHTML = [
+        `<div class="final-time">🏁 Final Time: ${finalTime.toFixed(1)}s</div>`,
+        `<div class="line">✅ Correct: ${correct}/${quiz.length}</div>`,
+        penalty>0 ? `<div class="line">⏱️ Penalty: +${penalty}s (${PENALTY_SECONDS}s per incorrect)</div>` : ``
+      ].join("");
+
+      const ul = document.createElement("ul");
+      items.forEach(li => ul.appendChild(li));
+      results.innerHTML = "";
+      results.appendChild(summary);
+      results.appendChild(ul);
 
       $("#back-button").style.display = "inline-block";
       $("#back-button").onclick = ()=>{
         $("#game").style.display = "none";
+        $("#level-list").style.display = "flex";
         $("#results").innerHTML = "";
       };
     };
+  }
+
+  function setVoiceBar(quiz){
+    const vbar = $("#voice-bar");
+    if (VOICE.enabled) {
+      vbar.style.display = "flex";
+      $("#read-all").onclick = () => {
+        let i = 0;
+        const items = quiz.map(q => q.prompt);
+        const langs = quiz.map(q => q.speakLang);
+        const next = () => {
+          if (i >= items.length) return;
+          VOICE.speak(items[i], langs[i]);
+          i++; setTimeout(next, 1700);
+        };
+        next();
+      };
+    } else vbar.style.display = "none";
   }
 
   // -------------------- TIMER --------------------
@@ -303,12 +380,12 @@
 
   // -------------------- HELPERS --------------------
   function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } }
-
   function capFirst(s){ return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
 
   function enSubject(en){
-    // keep "you(pl)" as "you" in English answer
-    return en === "you(pl)" ? "you" : en;
+    // Collapse display tags
+    if (en==="you (sg.)" || en==="you (pl.)") return "you";
+    return en;
   }
   function enAuxDo(en){ return (en==="he"||en==="she") ? "does" : "do"; }
   function enAuxDoQ(en){ return (en==="he"||en==="she") ? "Does" : "Do"; }
@@ -330,17 +407,15 @@
     return vk;
   }
   function english3rd(vk){
-    // 3rd person present
     const base = englishBase(vk);
     if (base === "have") return "has";
     if (base === "go") return "goes";
-    if (base === "do") return "does";
     if (base.endsWith("y")) return base.slice(0,-1)+"ies";
     return base + "s";
   }
   function englishPast(vk){
     switch(vk){
-      case "sein": return "was";  // first/third singular; prompt/answer generation uses generic without number conflicts
+      case "sein": return "was";
       case "haben": return "had";
       case "gehen": return "went";
       case "kommen": return "came";
@@ -355,7 +430,7 @@
     return englishBase(vk) + "ed";
   }
 
-  // Normalize strings for marking
+  // Normalize for marking:
   // - lower-case
   // - collapse spaces
   // - umlaut/ß folding: ä->ae, ö->oe, ü->ue, ß->ss
@@ -370,15 +445,16 @@
 
   // For questions, require trailing "?"
   function isCorrect(given, expected){
-    const g = norm(given);
-    const e = norm(expected);
+    const gRaw = (given||"").trim();
+    const eRaw = (expected||"").trim();
+    const g = norm(gRaw);
+    const e = norm(eRaw);
 
-    const isQ = /\?$/.test(expected.trim());
+    const isQ = /\?$/.test(eRaw);
     if (isQ) {
-      if (!/\?$/.test(given.trim())) return false; // must end with "?"
-      // compare with "?" kept:
-      const gCore = norm(given.trim().slice(0, -1)); // remove final ?
-      const eCore = norm(expected.trim().slice(0, -1));
+      if (!/\?$/.test(gRaw)) return false; // must include final ?
+      const gCore = norm(gRaw.slice(0, -1));
+      const eCore = norm(eRaw.slice(0, -1));
       return gCore === eCore;
     }
     return g === e;
