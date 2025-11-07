@@ -124,3 +124,19 @@ html, body { height: auto; min-height: 100%; overflow-y: auto; }
 @supports (-webkit-touch-callout: none) {
   .wrap, .card, .container { min-height: auto; }
 }
+/* --- A+ scroll & stacking fixes --- */
+html, body { height: auto !important; min-height: 100% !important; overflow-y: auto !important; }
+
+#game { padding-bottom: 48px; }                  /* keep room for bottom buttons/results */
+#questions { display: block !important; }
+#results { display: block !important; }
+#results ul { list-style: none; padding: 0; margin: 10px auto 0; max-width: 560px; display: block; }
+#results li { display: block; margin: 6px 0; }
+
+/* If your wrapper/card use fixed heights, let them grow and scroll */
+.wrap, .card, .container { max-height: none !important; overflow: visible !important; }
+
+/* iOS/Safari guard for 100vh quirks */
+@supports (-webkit-touch-callout: none) {
+  .wrap, .card, .container { min-height: auto !important; }
+}
