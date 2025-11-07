@@ -1,26 +1,42 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Turbo: A+ Edition</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Turbo: A+ Edition — German</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <h1><span class="turbo">Turbo</span> A+ Edition</h1>
-  <div id="tense-buttons">
-    <button class="tense-button" data-tense="Present">Present</button>
-    <button class="tense-button" data-tense="Past">Past</button>
-    <button class="tense-button" data-tense="Future">Future</button>
+  <div class="wrap">
+    <div class="card">
+      <h1><span class="turbo">Turbo</span> A+ Edition — German</h1>
+
+      <!-- Tense selection -->
+      <div id="tense-buttons" class="toolbar" role="toolbar" aria-label="Tense selection">
+        <button class="tense-button active" data-tense="Present">Present</button>
+        <button class="tense-button" data-tense="Past">Past</button>
+        <button class="tense-button" data-tense="Future">Future</button>
+      </div>
+
+      <!-- Level buttons (direction selection) + best times -->
+      <div id="level-list" class="level-list"></div>
+
+      <!-- Game area -->
+      <div id="game" class="game" style="display:none;">
+        <div id="timer" class="timer" aria-live="polite">Time: 0.0s</div>
+
+        <div id="questions" class="questions"></div>
+
+        <div class="controls">
+          <button id="submit" class="primary">Finish & Check</button>
+          <button id="back-button" class="secondary" style="display:none;">Back to Menu</button>
+        </div>
+
+        <div id="results" class="results" aria-live="polite"></div>
+      </div>
+    </div>
   </div>
-  <div id="timer"></div>
-  <div id="level-list"></div>
-  <div id="game" style="display:none;">
-    <div id="questions"></div>
-    <button id="submit">Finish & Check</button>
-    <button id="back-button" style="display:none;">Back</button>
-    <div id="results"></div>
-  </div>
+
   <script src="script.js"></script>
 </body>
 </html>
