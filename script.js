@@ -1,5 +1,4 @@
-// Turbo: A+ Edition — German (EN↔DE) with 10 Levels + Mic/Read + vertical feedback
-// Fits your existing A+ index.html & style.css (no changes needed)
+// Turbo: A+ Edition — German (EN↔DE) with 10 Levels, unlocks, scroll+feedback fixes
 (()=>{
   const $  = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -8,15 +7,18 @@
   const QUESTIONS_PER_RUN = 10;
   const PENALTY_SECONDS   = 30;
 
+  // Unlock targets (seconds) to unlock the NEXT level after finishing THIS one
+  const TARGETS = { L2:90, L3:85, L4:80, L5:75, L6:70, L7:65, L8:60, L9:55, L10:50 };
+
   // Two directions
   const DIRS = { EN2DE: "EN→DE", DE2EN: "DE→EN" };
-  let direction   = "EN2DE";
+  let direction    = "EN2DE";
   let currentTense = "Present";
   let currentLevel = "L1";
 
   let startTime = 0, timerId = null, quiz = [];
 
-  // 10 LEVELS: each maps to a subset (or mix) of verbs
+  // 10 LEVELS (verb pools)
   const LEVELS = {
     L1:  ["sein","haben","gehen"],
     L2:  ["kommen","machen"],
@@ -27,7 +29,7 @@
     L7:  ["machen","spielen","lernen","wohnen"],
     L8:  ["sprechen","essen","trinken"],
     L9:  ["sein","haben","gehen","sprechen","kommen"],
-    L10: ["sein","haben","gehen","kommen","machen","spielen","lernen","wohnen","sprechen","essen","trinken"] // mega mix
+    L10: ["sein","haben","gehen","kommen","machen","spielen","lernen","wohnen","sprechen","essen","trinken"]
   };
 
   // Persons (7 like your other games)
@@ -41,7 +43,7 @@
     { en:"they",     de:"sie" }
   ];
 
-  // Verb database (present + präteritum; future = werden + INF)
+  // Verb DB (present + präteritum; future = werden + INF)
   // Arrays: [ich, du, er, sie, wir, ihr, sie(pl)]
   const DB = {
     sein:    { inf:"sein",    present:["bin","bist","ist","ist","sind","seid","sind"],    past:["war","warst","war","war","waren","wart","waren"] },
@@ -97,45 +99,65 @@
     };
   });
 
+  // --- Unlock state ---
+  const UNLOCK_KEY = lvl => `turbo_aplus_unlock_${lvl}`;
+  function isUnlocked(lvl){
+    if (lvl==="L1") return true; // only L1 open initially
+    return localStorage.getItem(UNLOCK_KEY(lvl)) === "1";
+  }
+  function unlock(lvl){ localStorage.setItem(UNLOCK_KEY(lvl), "1"); }
+
   // Level + direction UI
   function renderLevelList(){
     const host = $("#level-list");
     host.innerHTML = "";
 
-    // Direction toggle row (tiny)
+    // Direction row
     const dirRow = document.createElement("div");
     dirRow.style.display = "flex";
     dirRow.style.gap = "8px";
     dirRow.style.justifyContent = "center";
     const d1 = document.createElement("button");
     d1.className = "level-btn";
-    d1.textContent = DIRS.EN2DE;
+    d1.textContent = DIRS.EN2DE + (direction==="EN2DE" ? " ✓":"");
     d1.onclick = ()=>{ direction="EN2DE"; renderLevelList(); };
     const d2 = document.createElement("button");
     d2.className = "level-btn";
-    d2.textContent = DIRS.DE2EN;
+    d2.textContent = DIRS.DE2EN + (direction==="DE2EN" ? " ✓":"");
     d2.onclick = ()=>{ direction="DE2EN"; renderLevelList(); };
     dirRow.appendChild(d1); dirRow.appendChild(d2);
     host.appendChild(dirRow);
 
-    // 10 level buttons
+    // Grid of 10 levels
     const grid = document.createElement("div");
     grid.style.display = "grid";
     grid.style.gridTemplateColumns = "repeat(auto-fit, minmax(180px, 1fr))";
     grid.style.gap = "10px";
     grid.style.marginTop = "10px";
 
-    Object.keys(LEVELS).forEach((lvl)=>{
+    Object.keys(LEVELS).forEach((lvl, idx)=>{
       const btn = document.createElement("button");
       btn.className = "level-btn";
       const best = getBest(currentTense, direction, lvl);
-      btn.textContent = `${lvl} — Best: ${fmtBest(best)}`;
-      btn.onclick = ()=>{ currentLevel = lvl; startRun(); };
+      const locked = !isUnlocked(lvl);
+      btn.disabled = locked;
+      const label = locked
+        ? `${lvl} 🔒  (Beat ${TARGETS[lvl]||'—'}s in ${prevOf(lvl)} to unlock)`
+        : `${lvl} — Best: ${fmtBest(best)}`;
+      btn.textContent = label;
+      btn.onclick = ()=>{ if (!locked){ currentLevel = lvl; startRun(); } };
       grid.appendChild(btn);
     });
     host.appendChild(grid);
   }
   renderLevelList();
+
+  function prevOf(lvl){
+    // returns the level that unlocks 'lvl'
+    const order = Object.keys(LEVELS);
+    const i = order.indexOf(lvl);
+    return i>0 ? order[i-1] : "L1";
+  }
 
   // -------------------- QUIZ BUILD --------------------
   function startRun(){
@@ -144,11 +166,15 @@
     $("#game").style.display = "block";
     $("#back-button").style.display = "none";
 
+    // force scrolling ON (in case any stylesheet disables it)
+    document.documentElement.style.overflowY = 'auto';
+    document.body.style.overflowY = 'auto';
+
     quiz = makeQuizFor(currentLevel);
     renderQuestions(quiz);
     attachSubmit();
 
-    // ensure Q1 visible + focus; also force page top (fixes "can't see #1")
+    // make sure Q1 is visible + focused and page starts at the top
     try { window.scrollTo({ top: 0, behavior: "instant" }); } catch(e){ window.scrollTo(0,0); }
     const firstInput = $("#questions input");
     if (firstInput){ firstInput.focus(); firstInput.scrollIntoView({block:"start"}); }
@@ -274,7 +300,7 @@
       const inputs = $$("#questions input");
       let correct = 0;
 
-      // Vertical feedback list (like original): UL > LI
+      // Vertical feedback list (UL > LI)
       const results = $("#results");
       results.innerHTML = "";
       const ul = document.createElement("ul");
@@ -301,18 +327,25 @@
                            <div class="line">✅ Correct: ${correct}/${quiz.length}</div>
                            ${penalty>0 ? `<div class="line">⏱️ Penalty: +${penalty}s (${PENALTY_SECONDS}s each)</div>` : ""}`;
 
-      // Clear and append vertical summary + list
       results.appendChild(summary);
       results.appendChild(ul);
 
-      // best per tense+direction+level
+      // Save best for this tense+direction+level
       const prev = getBest(currentTense, direction, currentLevel);
       if (prev==null || finalTime < prev) saveBest(currentTense, direction, currentLevel, finalTime);
+
+      // Unlock next level if target met
+      const nextLevel = nextOf(currentLevel);
+      const target = TARGETS[nextLevel];
+      if (nextLevel && target && finalTime <= target) {
+        unlock(nextLevel);
+      }
 
       $("#back-button").style.display = "inline-block";
       $("#back-button").onclick = ()=>{
         $("#game").style.display = "none";
         $("#results").innerHTML = "";
+        renderLevelList(); // refresh locks/best times
       };
     };
   }
@@ -330,6 +363,11 @@
   function stopTimer(){ clearInterval(timerId); }
 
   // -------------------- HELPERS --------------------
+  function nextOf(lvl){
+    const order = Object.keys(LEVELS);
+    const i = order.indexOf(lvl);
+    return (i>=0 && i<order.length-1) ? order[i+1] : null;
+  }
   function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } }
   function cap(s){ return s ? s[0].toUpperCase()+s.slice(1) : s; }
   function normalizeSubject(s){ return s==="you (pl)" ? "you" : s; }
