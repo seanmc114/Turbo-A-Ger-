@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Turbo: A+ Edition — German</title>
+  <title>TURBO: MTW German (Sein/Haben/Gehen)</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div class="container">
-    <h1><span class="turbo">TURBO</span>: A+ Edition — German</h1>
+    <h1><span class="turbo">TURBO</span>: MTW German (Sein/Haben/Gehen)</h1>
 
     <!-- Tense selection -->
     <div id="tense-buttons" role="toolbar" aria-label="Tense selection">
@@ -17,8 +17,15 @@
       <button class="tense-button" data-tense="Future">Future</button>
     </div>
 
-    <!-- Direction / Start buttons -->
-    <div id="level-list" class="modes"></div>
+    <!-- Unlock bar (same as original) -->
+    <div id="unlock-bar">
+      <input id="codeInput" placeholder="Enter teacher code" />
+      <button id="codeBtn">Unlock</button>
+      <span id="codeMsg" aria-live="polite"></span>
+    </div>
+
+    <!-- Level buttons -->
+    <div id="mode-list" class="modes"></div>
 
     <!-- Game area -->
     <div id="game" style="display:none;">
