@@ -140,3 +140,17 @@ html, body { height: auto !important; min-height: 100% !important; overflow-y: a
 @supports (-webkit-touch-callout: none) {
   .wrap, .card, .container { min-height: auto !important; }
 }
+/* --- Synge Street crest watermark (A+ original vibe) --- */
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  background: url('crest.png') no-repeat center center;
+  background-size: clamp(260px, 40vw, 520px);
+  opacity: 0.08;              /* subtle and classy */
+  pointer-events: none;        /* never blocks clicks */
+  z-index: 0;                  /* sits behind everything */
+}
+
+/* Ensure the app content sits above the watermark */
+body > * { position: relative; z-index: 1; }
