@@ -1,4 +1,4 @@
-/* Suite look with voice extras + BIG score */
+/* Suite look with voice extras + BIG score (same vibe as your original) */
 body {
   font-family: 'Arial', sans-serif;
   margin: 0;
@@ -52,6 +52,30 @@ h1 span.turbo {
 }
 #tense-buttons .tense-button:hover { background-color: #5e69b5; transform: scale(1.05); }
 #tense-buttons .tense-button.active { background-color: #1abc9c; }
+
+#unlock-bar {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  margin: 8px 0 18px 0;
+}
+#unlock-bar input {
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #ccc;
+  width: 60%;
+  max-width: 280px;
+}
+#unlock-bar button {
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: none;
+  background: #f39c12;
+  color: #fff;
+  cursor: pointer;
+}
+#unlock-bar #codeMsg { font-size: .95rem; color: #555; }
 
 .modes {
   display: flex;
