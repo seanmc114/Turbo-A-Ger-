@@ -1,4 +1,8 @@
-// Turbo: A+ Edition — German (EN↔DE) with 10 Levels, unlocks, scroll+feedback fixes
+// Turbo: A+ Edition — German (EN↔DE) with 10 Levels, unlocks, Mic/Read
+// - ONLY 'du' for 'you' (no 'ihr' prompts)
+// - English "to be" fully correct (am/are/is; was/were; negatives & questions)
+// - Crest handled by CSS; scroll + vertical feedback preserved
+
 (()=>{
   const $  = s => document.querySelector(s);
   const $$ = s => Array.from(document.querySelectorAll(s));
@@ -32,15 +36,16 @@
     L10: ["sein","haben","gehen","kommen","machen","spielen","lernen","wohnen","sprechen","essen","trinken"]
   };
 
-  // Persons (7 like your other games)
+  // Persons — map to the proper index in the conjugation arrays.
+  // Using ONLY 'du' for "you" (no 'ihr' entry); keep 'they' (sie).
+  // verb index (vi): [ich=0, du=1, er=2, sie(f)=3, wir=4, ihr=5, sie(pl)=6]
   const PERSONS = [
-    { en:"I",        de:"ich" },
-    { en:"you",      de:"du"  },     // (sg)
-    { en:"he",       de:"er"  },
-    { en:"she",      de:"sie" },
-    { en:"we",       de:"wir" },
-    { en:"you (pl)", de:"ihr" },
-    { en:"they",     de:"sie" }
+    { en:"I",   de:"ich", vi:0 },
+    { en:"you", de:"du",  vi:1 }, // <- only du
+    { en:"he",  de:"er",  vi:2 },
+    { en:"she", de:"sie", vi:3 },
+    { en:"we",  de:"wir", vi:4 },
+    { en:"they",de:"sie", vi:6 }
   ];
 
   // Verb DB (present + präteritum; future = werden + INF)
@@ -135,7 +140,7 @@
     grid.style.gap = "10px";
     grid.style.marginTop = "10px";
 
-    Object.keys(LEVELS).forEach((lvl, idx)=>{
+    Object.keys(LEVELS).forEach((lvl)=>{
       const btn = document.createElement("button");
       btn.className = "level-btn";
       const best = getBest(currentTense, direction, lvl);
@@ -153,7 +158,6 @@
   renderLevelList();
 
   function prevOf(lvl){
-    // returns the level that unlocks 'lvl'
     const order = Object.keys(LEVELS);
     const i = order.indexOf(lvl);
     return i>0 ? order[i-1] : "L1";
@@ -187,44 +191,61 @@
     const verbs = LEVELS[levelKey] || LEVELS.L1;
     const kinds = ["pos","neg","q"];
     verbs.forEach(vk=>{
-      for (let pi=0; pi<PERSONS.length; pi++){
-        kinds.forEach(k=> pool.push(buildItem(vk, pi, k)));
-      }
+      PERSONS.forEach(p => {
+        kinds.forEach(k=> pool.push(buildItem(vk, p, k)));
+      });
     });
     shuffle(pool);
     return pool.slice(0, QUESTIONS_PER_RUN);
   }
 
-  function buildItem(vk, pi, kind){
-    const V = DB[vk], P = PERSONS[pi];
-    const enS = normalizeSubject(P.en), deS = P.de;
+  function buildItem(vk, person, kind){
+    const V = DB[vk];
+    const enS = person.en, deS = person.de, idx = person.vi;
 
     // ----- German targets -----
     let dePos, deNeg, deQ;
     if (currentTense==="Present"){
-      const f=V.present[pi]; dePos=`${deS} ${f}`; deNeg=`${deS} ${f} nicht`; deQ=`${cap(f)} ${deS}?`;
+      const f=V.present[idx]; dePos=`${deS} ${f}`; deNeg=`${deS} ${f} nicht`; deQ=`${cap(f)} ${deS}?`;
     } else if (currentTense==="Past"){
-      const f=V.past[pi]; dePos=`${deS} ${f}`; deNeg=`${deS} ${f} nicht`; deQ=`${cap(f)} ${deS}?`;
+      const f=V.past[idx]; dePos=`${deS} ${f}`; deNeg=`${deS} ${f} nicht`; deQ=`${cap(f)} ${deS}?`;
     } else {
-      const W=["werde","wirst","wird","wird","werden","werdet","werden"][pi];
+      const W=["werde","wirst","wird","wird","werden","werdet","werden"][idx] || "werden";
       dePos=`${deS} ${W} ${V.inf}`; deNeg=`${deS} ${W} nicht ${V.inf}`; deQ=`${cap(W)} ${deS} ${V.inf}?`;
     }
 
     // ----- English targets -----
-    const base = enBase(vk), past=enPast(vk), third=is3(enS);
     let enPos,enNeg,enQ;
-    if (currentTense==="Present"){
-      enPos = `${enS} ${third?thirdForm(base):base}`;
-      enNeg = `${enS} ${third?"does":"do"} not ${base}`;
-      enQ   = `${third?"Does":"Do"} ${enS} ${base}?`;
-    } else if (currentTense==="Past"){
-      enPos = `${enS} ${past}`;
-      enNeg = `${enS} did not ${base}`;
-      enQ   = `Did ${enS} ${base}?`;
+    if (vk === "sein") {
+      // FULLY correct "to be"
+      if (currentTense === "Present"){
+        enPos = `${enS} ${bePres(enS)}`;
+        enNeg = `${enS} ${bePresNeg(enS)}`;
+        enQ   = `${beQPres(enS)}?`;
+      } else if (currentTense === "Past"){
+        enPos = `${enS} ${bePast(enS)}`;
+        enNeg = `${enS} ${bePastNeg(enS)}`;
+        enQ   = `${beQPast(enS)}?`;
+      } else {
+        enPos = `${enS} will be`;
+        enNeg = `${enS} will not be`;
+        enQ   = `Will ${enS} be?`;
+      }
     } else {
-      enPos = `${enS} will ${base}`;
-      enNeg = `${enS} will not ${base}`;
-      enQ   = `Will ${enS} ${base}?`;
+      const base = enBase(vk), past=enPast(vk), third=is3(enS);
+      if (currentTense==="Present"){
+        enPos = `${enS} ${third?thirdForm(base):base}`;
+        enNeg = `${enS} ${third?"does":"do"} not ${base}`;
+        enQ   = `${third?"Does":"Do"} ${enS} ${base}?`;
+      } else if (currentTense==="Past"){
+        enPos = `${enS} ${past}`;
+        enNeg = `${enS} did not ${base}`;
+        enQ   = `Did ${enS} ${base}?`;
+      } else {
+        enPos = `${enS} will ${base}`;
+        enNeg = `${enS} will not ${base}`;
+        enQ   = `Will ${enS} ${base}?`;
+      }
     }
 
     // Direction decides prompt / answer + TTS language
@@ -362,15 +383,7 @@
   }
   function stopTimer(){ clearInterval(timerId); }
 
-  // -------------------- HELPERS --------------------
-  function nextOf(lvl){
-    const order = Object.keys(LEVELS);
-    const i = order.indexOf(lvl);
-    return (i>=0 && i<order.length-1) ? order[i+1] : null;
-  }
-  function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } }
-  function cap(s){ return s ? s[0].toUpperCase()+s.slice(1) : s; }
-  function normalizeSubject(s){ return s==="you (pl)" ? "you" : s; }
+  // -------------------- HELPERS (English) --------------------
   function is3(s){ return s==="he"||s==="she"||s==="it"; }
   function thirdForm(base){ if(base==="have")return"has"; if(base==="go")return"goes"; if(base.endsWith("y"))return base.slice(0,-1)+"ies"; return base+"s"; }
   function enBase(vk){
@@ -391,7 +404,7 @@
   }
   function enPast(vk){
     switch(vk){
-      case "sein": return "was";
+      case "sein": return "was"; // not used for sein now; bePast handles it
       case "haben": return "had";
       case "gehen": return "went";
       case "kommen": return "came";
@@ -405,6 +418,42 @@
       default: return enBase(vk)+"ed";
     }
   }
+  // "to be" helpers — FULLY correct
+  function bePres(subj){
+    switch(subj){ case "I": return "am"; case "you": case "we": case "they": return "are"; default: return "is"; }
+  }
+  function bePresNeg(subj){
+    switch(subj){ case "I": return "am not"; case "you": case "we": case "they": return "are not"; default: return "is not"; }
+  }
+  function beQPres(subj){
+    switch(subj){
+      case "I": return "Am I";
+      case "you": return "Are you";
+      case "we": return "Are we";
+      case "they": return "Are they";
+      default: return `Is ${subj}`;
+    }
+  }
+  function bePast(subj){
+    switch(subj){ case "I": case "he": case "she": case "it": return "was"; default: return "were"; }
+  }
+  function bePastNeg(subj){ return bePast(subj) + " not"; }
+  function beQPast(subj){
+    switch(subj){
+      case "I": return "Was I";
+      case "he": case "she": case "it": return `Was ${subj}`;
+      default: return `Were ${subj}`;
+    }
+  }
+
+  // -------------------- HELPERS (shared) --------------------
+  function nextOf(lvl){
+    const order = Object.keys(LEVELS);
+    const i = order.indexOf(lvl);
+    return (i>=0 && i<order.length-1) ? order[i+1] : null;
+  }
+  function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } }
+  function cap(s){ return s ? s[0].toUpperCase()+s.slice(1) : s; }
 
   // Marking: lower-case, collapse spaces, fold ä/ö/ü/ß; require "?" if expected has it
   function normDE(s){
