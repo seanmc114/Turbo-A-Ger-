@@ -1,25 +1,44 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Turbo: A+ Edition</title>
-  <link rel="stylesheet" href="style.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Turbo: A+ Edition — German</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <h1><span class="turbo">Turbo</span> A+ Edition</h1>
-  <div id="tense-buttons">
-    <button class="tense-button" data-tense="Present">Present</button>
-    <button class="tense-button" data-tense="Past">Past</button>
-    <button class="tense-button" data-tense="Future">Future</button>
-  </div>
-  <div id="timer"></div>
-  <div id="level-list"></div>
-  <div id="game" style="display:none;">
-    <div id="questions"></div>
-    <button id="submit">Finish & Check</button>
-    <button id="back-button" style="display:none;">Back</button>
-    <div id="results"></div>
+  <div class="container">
+    <h1><span class="turbo">TURBO</span>: A+ Edition — German</h1>
+
+    <!-- Tense selection -->
+    <div id="tense-buttons" role="toolbar" aria-label="Tense selection">
+      <button class="tense-button active" data-tense="Present">Present</button>
+      <button class="tense-button" data-tense="Past">Past</button>
+      <button class="tense-button" data-tense="Future">Future</button>
+    </div>
+
+    <!-- Direction / Start buttons -->
+    <div id="level-list" class="modes"></div>
+
+    <!-- Game area -->
+    <div id="game" style="display:none;">
+      <div id="timer" aria-live="polite">Time: 0s</div>
+
+      <div id="voice-bar" class="voice-bar" style="display:none;">
+        <button id="read-all">🔊 Read all</button>
+        <label class="auto-read">
+          <input type="checkbox" id="auto-read" />
+          Auto-read on focus
+        </label>
+      </div>
+
+      <div id="questions"></div>
+      <div class="controls">
+        <button id="submit">Finish & Check</button>
+        <button id="back-button" style="display:none;">Back to Menu</button>
+      </div>
+      <div id="results" aria-live="polite"></div>
+    </div>
   </div>
   <script src="script.js"></script>
 </body>
